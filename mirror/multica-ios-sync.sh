@@ -19,7 +19,7 @@ fi
 [ -s "$dest/icon.png" ] || curl -fsSL -m 60 --retry 3 -o "$dest/icon.png" "$(jq -r '.apps[0].iconURL' "$tmp/source.json")"
 
 jq --arg ipa "$base/$ipa" --arg icon "$base/icon.png" \
-  '.apps[0].versions[0].downloadURL = $ipa | .apps[0].iconURL = $icon' "$tmp/source.json" > "$tmp/out.json"
+  '.apps[0].versions[0].downloadURL = $ipa | .apps[0].downloadURL = $ipa | .apps[0].iconURL = $icon' "$tmp/source.json" > "$tmp/out.json"
 cmp -s "$tmp/out.json" "$dest/source.json" || mv "$tmp/out.json" "$dest/source.json"
 # SideStore only needs the current version; keep one older IPA for rollback.
 ls -1t "$dest"/Multica-*.ipa | tail -n +3 | xargs -r rm -f

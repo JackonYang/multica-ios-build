@@ -110,6 +110,8 @@ jobs:
                 developerName: "multica-ai",
                 localizedDescription: "Unsigned build of github.com/multica-ai/multica apps/mobile.",
                 iconURL: "https://raw.githubusercontent.com/multica-ai/multica/main/apps/mobile/assets/icon.png",
+                # SideStore rejects an app without a top-level downloadURL, unlike AltStore v2.
+                downloadURL: $url, version: $ver, versionDate: $date, size: $size,
                 versions: [{version: $ver, buildVersion: $ver, date: $date, size: $size, downloadURL: $url}],
                 appPermissions: {}
               }],
