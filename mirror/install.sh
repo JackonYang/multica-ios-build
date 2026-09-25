@@ -10,6 +10,7 @@ ssh "$host" 'set -e
   sudo chown "$USER": /mnt/data/blog-server/multica-ios
   mkdir -p ~/logs && chmod +x ~/bin/multica-ios-sync.sh
   ~/bin/multica-ios-sync.sh
-  (crontab -l 2>/dev/null | grep -v multica-ios-sync
+  # grep -v exits 1 on an empty crontab; under set -e that would install an empty one.
+  (crontab -l 2>/dev/null | grep -v multica-ios-sync || true
    echo "*/30 * * * * $HOME/bin/multica-ios-sync.sh >> $HOME/logs/multica-ios-sync.log 2>&1") | crontab -
   crontab -l | grep multica-ios-sync'
