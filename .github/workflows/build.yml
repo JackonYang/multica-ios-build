@@ -1,0 +1,128 @@
+name: Build unsigned IPA
+
+# Builds multica-ai/multica's iOS app without signing.
+# SideStore re-signs it on the phone with a free Apple ID.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Upstream tag to build (empty = latest release)
+        default: ""
+      force:
+        description: Rebuild even if this tag was already released
+        type: boolean
+        default: false
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 150
+    env:
+      GH_TOKEN: ${{ github.token }}
+      APP_ENV: production
+      # Metro inlines EXPO_PUBLIC_* at bundle time, so they must be in the xcodebuild env.
+      EXPO_PUBLIC_API_URL: https://api.multica.ai
+      EXPO_PUBLIC_WEB_URL: https://multica.ai
+    steps:
+      - name: Resolve upstream tag
+        id: ref
+        run: |
+          tag="${{ inputs.ref }}"
+          [ -n "$tag" ] || tag=$(gh release view -R multica-ai/multica --json tagName --jq .tagName)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          if [ "${{ inputs.force }}" != "true" ] && gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "$tag already built, skipping"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.ref.outputs.skip != 'true'
+        with:
+          repository: multica-ai/multica
+          ref: ${{ steps.ref.outputs.tag }}
+          path: src
+
+      - uses: pnpm/action-setup@v4
+        if: steps.ref.outputs.skip != 'true'
+        with:
+          package_json_file: src/package.json
+
+      - uses: actions/setup-node@v6
+        if: steps.ref.outputs.skip != 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: src/pnpm-lock.yaml
+
+      - name: Install JS deps
+        if: steps.ref.outputs.skip != 'true'
+        working-directory: src
+        run: pnpm install --frozen-lockfile
+
+      - name: Prebuild iOS project
+        if: steps.ref.outputs.skip != 'true'
+        working-directory: src/apps/mobile
+        run: pnpm exec expo prebuild -p ios
+
+      - name: Build app (no signing)
+        if: steps.ref.outputs.skip != 'true'
+        working-directory: src/apps/mobile/ios
+        run: |
+          ws=$(ls -d *.xcworkspace | head -1)
+          scheme="${ws%.xcworkspace}"
+          set -o pipefail
+          xcodebuild -workspace "$ws" -scheme "$scheme" -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tail -200
+
+      - name: Package IPA and SideStore source
+        if: steps.ref.outputs.skip != 'true'
+        run: |
+          app=$(ls -d src/apps/mobile/ios/build/Build/Products/Release-iphoneos/*.app | head -1)
+          ver="${{ steps.ref.outputs.version }}"
+          # Upstream pins the app version to 0.1.0; SideStore needs it to match the source entry.
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $ver" "$app/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $ver" "$app/Info.plist"
+          bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app/Info.plist")
+          mkdir -p out/Payload && cp -R "$app" out/Payload/
+          (cd out && zip -qry "Multica-$ver.ipa" Payload)
+          size=$(stat -f%z "out/Multica-$ver.ipa")
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/${{ steps.ref.outputs.tag }}"
+          jq -n --arg ver "$ver" --arg bid "$bundle_id" --argjson size "$size" \
+            --arg url "$base/Multica-$ver.ipa" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg repo "$GITHUB_REPOSITORY" '{
+              name: "Multica (self-built)",
+              identifier: ("io.github." + ($repo | ascii_downcase | gsub("/"; "."))),
+              apps: [{
+                name: "Multica",
+                bundleIdentifier: $bid,
+                developerName: "multica-ai",
+                localizedDescription: "Unsigned build of github.com/multica-ai/multica apps/mobile.",
+                iconURL: "https://raw.githubusercontent.com/multica-ai/multica/main/apps/mobile/assets/icon.png",
+                versions: [{version: $ver, buildVersion: $ver, date: $date, size: $size, downloadURL: $url}],
+                appPermissions: {}
+              }],
+              news: []
+            }' > out/source.json
+          cat out/source.json
+
+      - name: Publish release
+        if: steps.ref.outputs.skip != 'true'
+        run: |
+          tag="${{ steps.ref.outputs.tag }}"
+          gh release delete "$tag" -R "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" -R "$GITHUB_REPOSITORY" --latest \
+            --title "Multica iOS $tag (unsigned)" \
+            --notes "Unsigned IPA built from multica-ai/multica@$tag. Install via SideStore." \
+            out/*.ipa out/source.json
