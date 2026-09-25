@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 150
     env:
       GH_TOKEN: ${{ github.token }}
@@ -80,11 +80,11 @@ jobs:
         run: |
           ws=$(ls -d *.xcworkspace | head -1)
           scheme="${ws%.xcworkspace}"
-          set -o pipefail
+          xcodebuild -version
           xcodebuild -workspace "$ws" -scheme "$scheme" -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build | tail -200
+            build > xcodebuild.log 2>&1 || { grep -E 'error:' xcodebuild.log | sort -u | head -50; tail -50 xcodebuild.log; exit 1; }
 
       - name: Package IPA and SideStore source
         if: steps.ref.outputs.skip != 'true'
