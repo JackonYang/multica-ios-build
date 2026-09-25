@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: build
@@ -33,6 +34,10 @@ jobs:
       EXPO_PUBLIC_API_URL: https://api.multica.ai
       EXPO_PUBLIC_WEB_URL: https://multica.ai
     steps:
+      # GitHub disables schedules after 60 days without commits; re-enabling resets that clock.
+      - name: Keep schedule alive
+        run: gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/enable"
+
       - name: Resolve upstream tag
         id: ref
         run: |
@@ -52,7 +57,7 @@ jobs:
           ref: ${{ steps.ref.outputs.tag }}
           path: src
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         if: steps.ref.outputs.skip != 'true'
         with:
           package_json_file: src/package.json
