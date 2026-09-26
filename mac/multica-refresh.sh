@@ -37,7 +37,9 @@ fi
 log "installing $ver"
 # A locked phone drops off Wi-Fi for minutes at a time, so let xtool wait for it; alarm bounds the wait.
 rc=0
-perl -e 'alarm shift; exec @ARGV' 600 xtool install "${dev_args[@]}" "$ipa" </dev/null || rc=$?
+# Exec the app binary directly: the brew wrapper forks it, so alarm would orphan the real process.
+XTL_CLI=1 perl -e 'alarm shift; exec @ARGV' 600 /Applications/xtool.app/Contents/MacOS/xtool \
+  install "${dev_args[@]}" "$ipa" </dev/null || rc=$?
 if (( rc == 0 )); then
   echo "$now" > "$state/last-success"
   echo "$ver" > "$state/last-version"
