@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Re-sign and install the latest Multica IPA over Wi-Fi with xtool; free-account signatures last 7 days.
 set -euo pipefail
-export PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
+export PATH=$HOME/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
 repo=JackonYang/multica-ios-build
 state="$HOME/Library/Application Support/multica-refresh"
